@@ -1,49 +1,50 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ConnectionProvider, useConnection, useWallet, WalletProvider } from '@solana/wallet-adapter-react';
 import {
   WalletModalProvider,
   WalletDisconnectButton,
   WalletMultiButton
 } from '@solana/wallet-adapter-react-ui';
+import { PhantomWalletAdapter } from '@solana/wallet-adapter-wallets';
 import { Transaction, SystemProgram, PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
-
+import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import '@solana/wallet-adapter-react-ui/styles.css';
 
-function App() {
-
-  const endpoint = "https://mainnet.helius-rpc.com/?api-key=d585ad2a-c708-441d-bd5d-b704df496d5f"
-  const { publicKey } = useWallet();
+export function App() {
+  const endpoint = "https://mainnet.helius-rpc.com/?api-key=d585ad2a-c708-441d-bd5d-b704df496d5f";
+  const wallets = useMemo(() => [new PhantomWalletAdapter()], []);
 
   return (
     <ConnectionProvider endpoint={endpoint}>
-      <WalletProvider wallets={[]} autoConnect>
+      <WalletProvider wallets={wallets} autoConnect>
         <WalletModalProvider>
-
-          <div className='flex justify-end'>
-            {!publicKey && <WalletMultiButton />}
-            {publicKey && <WalletDisconnectButton />}
-          </div>
-
-          <div>
-            <Portfolio />
-          </div>
-
-          <div>
-            <Transfer />
-          </div>
-
-          <div>
-            <RequestAirdrop />
-          </div>
-
+          <Main />
         </WalletModalProvider>
       </WalletProvider>
     </ConnectionProvider>
-  )
+  );
 }
 
-export default App
+function Main() {
+  const { publicKey } = useWallet();
 
+  return (
+    <>
+      
+      <div className="flex justify-end">
+        {publicKey ? <WalletDisconnectButton /> : (
+          <WalletMultiButton />
+        )}
+      </div>
+
+      <Portfolio />
+      <Transfer />
+      <RequestAirdrop />
+      <Mint/>
+
+    </>
+  )
+}
 
 function Portfolio() {
   const { publicKey } = useWallet()
@@ -117,11 +118,11 @@ function RequestAirdrop() {
   return (
     <div>
       <input type='number' placeholder='Amount' onChange={(e) => setAmount(Number(e.target.value))} />
-      <button      
+      <button
         onClick={async () => {
           try {
             if (!amount || !wallet) return;
-          await connection.requestAirdrop(wallet.publicKey!, amount * LAMPORTS_PER_SOL)  
+            await connection.requestAirdrop(wallet.publicKey!, amount * LAMPORTS_PER_SOL)
           } catch (error: any) {
             console.log(error.message)
           }
@@ -132,3 +133,65 @@ function RequestAirdrop() {
   )
 }
 
+function Mint(){
+  const { publicKey } = useWallet();
+  const { connection } = useConnection();
+  const [mintAddress, setMintAddress] = useState('');
+  const [mintError, setMintError] = useState('');
+
+  const mint = useMemo(() => {
+    if (!mintAddress) return null;
+    try {
+      return new PublicKey(mintAddress);
+    } catch (error) {
+      return null;
+    }
+  }, [mintAddress]);
+
+  useEffect(() => {
+    if (mintAddress && !mint) {
+      setMintError('Invalid mint address');
+    } else {
+      setMintError('');
+    }
+  }, [mintAddress, mint]);
+
+  useEffect(() => {
+    async function loadTokens() {
+      if (!publicKey) return;
+
+      const accounts = await connection.getParsedTokenAccountsByOwner(
+        publicKey,
+        {
+          programId: TOKEN_PROGRAM_ID,
+        }
+      );
+console.log(accounts)
+      for (const { account } of accounts.value) {
+        const info = account.data.parsed.info;
+
+        console.log({
+          mint: info.mint,
+          balance: info.tokenAmount.uiAmount,
+        });
+
+        // Fetch metadata for info.mint here  
+      }
+    }
+
+    loadTokens();
+  }, [publicKey, connection]);
+
+  return (
+    <div>
+      <input
+        type="text"
+        placeholder="Enter token mint address"
+        value={mintAddress}
+        onChange={(e) => setMintAddress(e.target.value)}
+      />
+      {mintError && <div style={{ color: 'red' }}>{mintError}</div>}
+      {mint && <div>Mint key is valid: {mint.toBase58()}</div>}
+    </div>
+  );
+}
